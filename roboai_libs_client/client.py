@@ -21,6 +21,27 @@ from .models import (
 
 DEFAULT_BASE_URL = "https://libs.roboai.fi/api"
 
+# Time-resolved fields dropped when the caller only wants the full exposure.
+_SNAPSHOT_FIELDS = ("snapshot_matrix",)
+
+
+def _drop_snapshots(data: dict[str, Any]) -> dict[str, Any]:
+    """Remove the per-snapshot matrix before it reaches pydantic.
+
+    The server always sends it today, so this saves memory rather than
+    bandwidth: dropping it here means pydantic never builds a second validated
+    copy, and the raw lists parsed out of the response body become collectable
+    immediately. On a 100-wavelength-point x 100-snapshot exposure the matrix is
+    two orders of magnitude larger than ``total_exposure`` itself, which matters
+    when many exposures are run in a loop.
+
+    ``time_vector`` and the Te/Ne/length vectors are kept: they are one value
+    per snapshot, so they stay cheap and still describe the time grid used.
+    """
+    for key in _SNAPSHOT_FIELDS:
+        data.pop(key, None)
+    return data
+
 
 class RoboAILIBSClient:
     """Synchronous Python client for the RoboAI LIBS Spectrum Simulator API."""
@@ -110,13 +131,24 @@ class RoboAILIBSClient:
     def simulate_exposure(
         self,
         request: ExposureRequest | None = None,
+        *,
+        include_snapshots: bool = True,
         **kwargs: Any,
     ) -> ExposureResult:
+        """Run a time-resolved exposure and return the result.
+
+        With ``include_snapshots=False`` the per-snapshot matrix is discarded on
+        arrival and ``result.snapshot_matrix`` comes back empty; the full
+        exposure (``result.total_exposure``) is unaffected, since the server
+        integrates it over every time step independently of the snapshots.
+        """
         if request is None:
             request = ExposureRequest(**kwargs)
         elif kwargs:
             raise TypeError("Pass either a request or keyword fields, not both.")
         data = self._post_json("/v1/spectra/exposure", request.api_payload())
+        if not include_snapshots:
+            data = _drop_snapshots(data)
         return ExposureResult.model_validate(data)
 
     def submit_exposure_job(
@@ -144,9 +176,15 @@ class RoboAILIBSClient:
         data = self._post_json(path, request.api_payload())
         return JobSubmitResult.model_validate(data)
 
-    def get_job(self, job_id: str) -> JobStatusResult:
-        """Fetch a job's status, slice progress, and result once completed."""
+    def get_job(self, job_id: str, *, include_snapshots: bool = True) -> JobStatusResult:
+        """Fetch a job's status, slice progress, and result once completed.
+
+        ``include_snapshots=False`` drops the per-snapshot matrix from a
+        completed job's result; see :meth:`simulate_exposure`.
+        """
         data = self._request("GET", f"/v1/jobs/{job_id}").json()
+        if not include_snapshots and isinstance(data.get("result"), dict):
+            data["result"] = _drop_snapshots(data["result"])
         return JobStatusResult.model_validate(data)
 
     def cancel_job(self, job_id: str) -> None:
@@ -164,16 +202,20 @@ class RoboAILIBSClient:
         poll_interval_s: float = 1.0,
         timeout_s: float = 600.0,
         on_progress: Callable[[JobStatusResult], None] | None = None,
+        include_snapshots: bool = True,
     ) -> JobStatusResult:
         """Poll a job until it completes and return its final status.
 
         ``on_progress`` is invoked only when the polled status or slice counts
         change (including the terminal poll), so it is safe to print from.
+
+        ``include_snapshots=False`` drops the per-snapshot matrix from every
+        polled result; see :meth:`simulate_exposure`.
         """
         deadline = time.monotonic() + timeout_s
         last_progress: tuple[str, int | None, int | None] | None = None
         while True:
-            status = self.get_job(job_id)
+            status = self.get_job(job_id, include_snapshots=include_snapshots)
             if on_progress is not None:
                 progress = (status.status, status.slices_done, status.slices_total)
                 if progress != last_progress:
@@ -187,6 +229,35 @@ class RoboAILIBSClient:
             if time.monotonic() >= deadline:
                 raise RoboAILIBSClientError(f"Timed out waiting for exposure job {job_id}.")
             time.sleep(poll_interval_s)
+
+    def run_exposure_job(
+        self,
+        request: ExposureRequest,
+        *,
+        include_snapshots: bool = True,
+        poll_interval_s: float = 1.0,
+        timeout_s: float = 600.0,
+        on_progress: Callable[[JobStatusResult], None] | None = None,
+    ) -> ExposureResult:
+        """Submit an exposure job, wait for it, and return its result.
+
+        The async path suits long exposures that would time out on the
+        synchronous endpoint. Pass ``include_snapshots=False`` to keep only the
+        full exposure; see :meth:`simulate_exposure`.
+        """
+        job = self.submit_exposure_job(request, cancel_on_disconnect=False)
+        status = self.wait_for_job(
+            job.job_id,
+            poll_interval_s=poll_interval_s,
+            timeout_s=timeout_s,
+            on_progress=on_progress,
+            include_snapshots=include_snapshots,
+        )
+        if status.result is None:
+            raise RoboAILIBSClientError(
+                f"Exposure job {job.job_id} completed without a result."
+            )
+        return status.result
 
     def download_job_hdf5(self, job_id: str) -> bytes:
         """Download a completed job's result as self-describing HDF5 bytes."""

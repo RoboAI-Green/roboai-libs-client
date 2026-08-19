@@ -404,3 +404,91 @@ def test_save_dynamic_hdf5_threads_on_progress(tmp_path):
     )
 
     assert seen == ["completed"]
+
+
+def _exposure_payload():
+    return {
+        "wls": [200.0, 200.05],
+        "total_exposure": [1.0, 2.0],
+        "snapshot_matrix": [[0.4, 0.8], [0.6, 1.2]],
+        "time_vector": [1e-7, 2e-7],
+        "te_vector": [1.0, 0.9],
+        "ne_vector": [1e17, 9e16],
+        "length_vector": [1e-3, 1.1e-3],
+    }
+
+
+def test_new_request_fields_reach_the_api():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json=_exposure_payload())
+
+    client = make_client(handler)
+    client.simulate_exposure(
+        ExposureRequest(
+            elements=["Cu"],
+            stark_model="mse",
+            continuum_model="merlin_physical",
+        )
+    )
+
+    assert seen["stark_model"] == "mse"
+    assert seen["continuum_model"] == "merlin_physical"
+    assert seen["planck_empirical_scale"] == 0.0
+    # Already-wired nested configs must still travel.
+    assert seen["plasma_config"]["number_of_layers"] == 2
+    assert seen["temporal_config"]["gamma_dens"] == 2.0
+
+
+def test_simulate_exposure_keeps_snapshots_by_default():
+    client = make_client(lambda request: httpx.Response(200, json=_exposure_payload()))
+
+    result = client.simulate_exposure(ExposureRequest(elements=["Cu"]))
+
+    assert result.snapshot_matrix == [[0.4, 0.8], [0.6, 1.2]]
+    assert result.total_exposure == [1.0, 2.0]
+
+
+def test_simulate_exposure_total_only_drops_the_matrix():
+    client = make_client(lambda request: httpx.Response(200, json=_exposure_payload()))
+
+    result = client.simulate_exposure(
+        ExposureRequest(elements=["Cu"]), include_snapshots=False
+    )
+
+    assert result.snapshot_matrix == []
+    # The full exposure is unaffected: the server integrates it independently.
+    assert result.total_exposure == [1.0, 2.0]
+    # Per-snapshot vectors stay: one value each, cheap and still descriptive.
+    assert result.time_vector == [1e-7, 2e-7]
+
+
+def test_exposure_result_parses_a_response_without_snapshots():
+    payload = _exposure_payload()
+    del payload["snapshot_matrix"]
+    client = make_client(lambda request: httpx.Response(200, json=payload))
+
+    result = client.simulate_exposure(ExposureRequest(elements=["Cu"]))
+
+    assert result.snapshot_matrix == []
+
+
+def test_run_exposure_job_total_only():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/spectra/exposure/jobs":
+            return httpx.Response(200, json={"job_id": "job_1", "status": "queued"})
+        return httpx.Response(
+            200,
+            json={"job_id": "job_1", "status": "completed", "result": _exposure_payload()},
+        )
+
+    client = make_client(handler)
+
+    result = client.run_exposure_job(
+        ExposureRequest(elements=["Cu"]), include_snapshots=False
+    )
+
+    assert result.snapshot_matrix == []
+    assert result.total_exposure == [1.0, 2.0]
