@@ -195,6 +195,18 @@ def _write_static_csv(result, output_path: Path | None) -> None:
         writer.writerows(zip(result.wls, result.intensity, strict=True))
 
 
+def _write_full_exposure_csv(result, output_path: Path | None) -> None:
+    """Write the time-integrated spectrum -- the UI's "full exposure" trace."""
+    if output_path is None:
+        target = contextlib.nullcontext(sys.stdout)
+    else:
+        target = output_path.open("w", newline="")
+    with target as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(["wavelength_nm", "full_exposure"])
+        writer.writerows(zip(result.wls, result.total_exposure, strict=True))
+
+
 def _static_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     range_min_nm, range_max_nm = args.wavelength_range
     return {
@@ -226,6 +238,19 @@ def _run_dynamic(args: argparse.Namespace, client: RoboAILIBSClient) -> int:
         integration_time_s=args.integration_time_s,
         time_resolution_s=args.time_resolution_s,
     )
+    if args.total_only:
+        # The full exposure is integrated server-side over every time step, so
+        # dropping the snapshots costs nothing in fidelity.
+        result = client.run_exposure_job(
+            request,
+            include_snapshots=False,
+            poll_interval_s=args.poll_interval,
+            timeout_s=args.job_timeout,
+        )
+        _write_full_exposure_csv(result, args.out)
+        print(f"Saved {len(result.wls)} wavelength points to {args.out}")
+        return 0
+
     path = client.save_dynamic_hdf5(
         args.out,
         request,
@@ -406,13 +431,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     dynamic_parser = subparsers.add_parser(
         "dynamic",
-        help="Run a dynamic exposure job and download HDF5",
-        description="Run a dynamic exposure simulation job and save the HDF5 result.",
+        help="Run a dynamic exposure job and download HDF5, or export the full exposure as CSV",
+        description=(
+            "Run a dynamic exposure simulation job and save the HDF5 result, or "
+            "with --total-only write just the full exposure spectrum as CSV."
+        ),
         epilog=textwrap.dedent(
             """\
             Examples:
               roboai-libs dynamic --element Ni --out ni_dynamic.h5
               roboai-libs dynamic --element Ni --range 200 230 --resolution 0.05 --integration-time 1e-6 --time-resolution 100e-9 --out ni_dynamic.h5
+              roboai-libs dynamic --element Ni --total-only --out ni_full_exposure.csv
             """
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -447,10 +476,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum time to wait for the job in seconds. Default: 600.",
     )
     dynamic_parser.add_argument(
+        "--total-only",
+        dest="total_only",
+        action="store_true",
+        help=(
+            "Write only the full exposure (the time-integrated spectrum) as CSV "
+            "instead of downloading the HDF5 surface. Discards the per-snapshot "
+            "matrix on arrival, which keeps memory flat across batch runs."
+        ),
+    )
+    dynamic_parser.add_argument(
         "--out",
         type=Path,
         required=True,
-        help="Output HDF5 path.",
+        help="Output path: HDF5 by default, CSV with --total-only.",
     )
     dynamic_parser.set_defaults(func=_run_dynamic)
 

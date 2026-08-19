@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+StarkModel = Literal["hydrogenic", "mse"]
+ContinuumModel = Literal["none", "merlin_physical", "planck_empirical"]
 
 
 def equal_proportions(elements: list[str]) -> list[float]:
@@ -44,6 +47,9 @@ class StaticSpectrumRequest(BaseModel):
     output_wavelength_grid_name: str | None = None
     set_max_charge: int = Field(3, ge=1)
     plasma_config: PlasmaConfig = Field(default_factory=PlasmaConfig)
+    stark_model: StarkModel = "hydrogenic"
+    continuum_model: ContinuumModel = "none"
+    planck_empirical_scale: float = Field(0.0, ge=0.0)
 
     @field_validator("proportions", mode="after")
     @classmethod
@@ -112,7 +118,10 @@ class StaticSpectrumResult(SpectrumResultBase):
 
 class ExposureResult(SpectrumResultBase):
     total_exposure: list[float] = Field(validation_alias=AliasChoices("total_exposure", "intensity"))
-    snapshot_matrix: list[list[float]]
+    # Defaults to empty so a total-only result parses: the caller may have asked
+    # for the snapshots to be dropped, and a future server-side opt-out would
+    # omit the field entirely.
+    snapshot_matrix: list[list[float]] = Field(default_factory=list)
     time_vector: list[float] = Field(default_factory=list, validation_alias=AliasChoices("time_vector", "time_s"))
     te_vector: list[float] = Field(default_factory=list, validation_alias=AliasChoices("te_vector", "temperature_eV", "temperature_ev"))
     ne_vector: list[float] = Field(default_factory=list, validation_alias=AliasChoices("ne_vector", "electron_density_cm3", "ne_cm3"))
