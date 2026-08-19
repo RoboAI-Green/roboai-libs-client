@@ -290,7 +290,35 @@ print(len(result.total_exposure))
 ```
 
 `snapshot_matrix` is the time-wavelength intensity matrix. `total_exposure` is
-the time-integrated spectrum.
+the time-integrated spectrum — the same curve the web simulator plots as "full
+exposure".
+
+If you only need the full exposure, pass `include_snapshots=False`:
+
+```python
+result = client.simulate_exposure(
+    elements=["Ni"],
+    integration_time_s=1e-6,
+    time_resolution_s=100e-9,
+    include_snapshots=False,
+)
+
+print(len(result.total_exposure))   # unchanged
+print(len(result.snapshot_matrix))  # 0
+```
+
+`total_exposure` is integrated on the server over every time step, independently
+of the snapshots, so dropping them costs nothing in accuracy. It saves memory
+rather than bandwidth: the server still sends the matrix, but the client discards
+it before parsing it into the result, which keeps memory flat when many exposures
+run in a loop. At 10,000 wavelength points the matrix is roughly fifty times
+larger than `total_exposure` itself.
+
+Command-line equivalent, writing the full exposure as CSV:
+
+```bash
+roboai-libs dynamic --element Ni --total-only --out ni_full_exposure.csv
+```
 
 ### 7. Save dynamic HDF5
 
@@ -334,6 +362,14 @@ def show(status):
 client.save_dynamic_hdf5("ni_dynamic.h5", request, on_progress=show)
 ```
 
+To run a job and get the parsed result instead of an HDF5 file, use
+`run_exposure_job`:
+
+```python
+result = client.run_exposure_job(request, on_progress=show)
+print(len(result.total_exposure))
+```
+
 For full control, drive the job lifecycle yourself:
 
 ```python
@@ -363,7 +399,11 @@ Main client methods:
   (`.npy`, `.csv`, `.txt`, `.tsv`, `.dat`) and returns a validated list for
   `output_wavelengths_nm`.
 - `simulate_static(...)` returns a `StaticSpectrumResult`.
-- `simulate_exposure(...)` returns an `ExposureResult`.
+- `simulate_exposure(..., include_snapshots=True)` returns an `ExposureResult`.
+  Set `include_snapshots=False` to keep only the full exposure.
+- `run_exposure_job(request, ...)` submits a dynamic exposure job, waits for it,
+  and returns the `ExposureResult` — the async path for exposures long enough to
+  time out on `simulate_exposure`. Also accepts `include_snapshots`.
 - `save_dynamic_hdf5(path, request, on_progress=...)` submits a dynamic exposure
   job, waits for it, downloads the HDF5 result, and returns the written `Path`.
 - `submit_exposure_job(...)` submits an async exposure job and returns a
@@ -388,8 +428,19 @@ Most spectrum requests use the following parameters:
 | `instrument_profile` | Instrument broadening profile, usually `"gaussian"` or `"lorentzian"`. |
 | `output_wavelengths_nm` | Optional custom output wavelength grid (2 to 10,000 ascending points, in nanometres). Overrides the uniform range/resolution grid. Use `load_wavelength_grid()` to read one from a file. |
 | `output_wavelength_grid_name` | Optional label for the custom grid, echoed back in `result.output_grid`. |
+| `stark_model` | Stark broadening method: `"hydrogenic"` (default) or `"mse"`. |
+| `continuum_model` | Plasma continuum: `"none"` (default, line emission only), `"merlin_physical"`, or `"planck_empirical"`. |
+| `planck_empirical_scale` | Scale factor for the `"planck_empirical"` continuum. Ignored by the other models. |
+| `plasma_config` | Layered plasma structure — see `PlasmaConfig`: layer count, inter-layer Te/Ne ratios, core length fraction, and total plasma length. Drives self-absorption. |
+| `temporal_config` | Time evolution of Te, Ne, and plasma length for dynamic simulations — see `TemporalConfig`. |
 | `integration_time_s` | Total simulated exposure time for dynamic simulations, in seconds. |
 | `time_resolution_s` | Time step for dynamic simulations, in seconds. |
+
+`te_ev` is limited to 0.1–10 eV and `ne_cm3` to 1e13–1e21 cm^-3. Both windows
+comfortably cover the LIBS regime (Te is typically ~0.5–2 eV and below the 10 eV
+low-temperature-plasma boundary; Ne is typically 1e16–1e19 cm^-3), and the
+temperature bound also catches the common mistake of passing kelvin instead of
+electronvolts.
 
 Typed request models:
 
