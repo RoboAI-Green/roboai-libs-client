@@ -1,4 +1,4 @@
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 from .client import DEFAULT_BASE_URL, RoboAILIBSClient
 from .errors import RoboAILIBSAPIError, RoboAILIBSClientError
