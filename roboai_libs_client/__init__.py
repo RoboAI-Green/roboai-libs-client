@@ -1,3 +1,5 @@
+__version__ = "1.0.0"
+
 from .client import DEFAULT_BASE_URL, RoboAILIBSClient
 from .errors import RoboAILIBSAPIError, RoboAILIBSClientError
 from .grids import MAX_WAVELENGTH_POINTS, load_wavelength_grid
@@ -28,5 +30,6 @@ __all__ = [
     "StaticSpectrumRequest",
     "StaticSpectrumResult",
     "TemporalConfig",
+    "__version__",
     "load_wavelength_grid",
 ]
