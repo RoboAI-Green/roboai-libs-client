@@ -15,6 +15,7 @@ Spectrum Simulator API.
 - [Usage Examples](#usage-examples)
 - [API Reference and Parameters](#api-reference-and-parameters)
 - [Support](#support)
+- [Citation](#citation)
 - [License](#license)
 
 ## Install
@@ -458,6 +459,28 @@ Typed result models:
 
 For bugs, questions, or feature requests, please open an issue on the
 [GitHub repository](https://github.com/RoboAI-Green/roboai-libs-client/issues).
+
+## Citation
+
+If you use this software in your research, please cite:
+
+> Y. Wang, S. Zhang, T. Aaltonen, P. Suominen, E. Ojanen.
+> An interactive online platform for the simulation and analysis of LIBS.
+> _SoftwareX_ **36** (2026) 103030.
+> https://doi.org/10.1016/j.softx.2026.103030
+
+```bibtex
+@article{wang2026interactive,
+  title   = {An interactive online platform for the simulation and analysis of {LIBS}},
+  author  = {Wang, Yilin and Zhang, Shuo and Aaltonen, Toni and Suominen, Pekka and Ojanen, Eetu},
+  journal = {SoftwareX},
+  volume  = {36},
+  pages   = {103030},
+  year    = {2026},
+  issn    = {2352-7110},
+  doi     = {10.1016/j.softx.2026.103030}
+}
+```
 
 ## License
 

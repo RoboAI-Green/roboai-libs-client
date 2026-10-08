@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "RoboAI LIBS Client"
+authors:
+  - family-names: Wang
+    given-names: Yilin
+  - family-names: Zhang
+    given-names: Shuo
+  - family-names: Aaltonen
+    given-names: Toni
+  - family-names: Suominen
+    given-names: Pekka
+  - family-names: Ojanen
+    given-names: Eetu
+repository-code: "https://github.com/RoboAI-Green/roboai-libs-client"
+license: MIT
+preferred-citation:
+  type: article
+  title: "An interactive online platform for the simulation and analysis of LIBS"
+  authors:
+    - family-names: Wang
+      given-names: Yilin
+    - family-names: Zhang
+      given-names: Shuo
+    - family-names: Aaltonen
+      given-names: Toni
+    - family-names: Suominen
+      given-names: Pekka
+    - family-names: Ojanen
+      given-names: Eetu
+  journal: SoftwareX
+  volume: 36
+  start: 103030
+  year: 2026
+  issn: "2352-7110"
+  doi: "10.1016/j.softx.2026.103030"
