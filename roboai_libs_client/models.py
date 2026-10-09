@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 StarkModel = Literal["hydrogenic", "mse"]
-ContinuumModel = Literal["none", "merlin_physical", "planck_empirical"]
+ContinuumModel = Literal["none", "merlin_physical"]
 
 
 def equal_proportions(elements: list[str]) -> list[float]:
@@ -49,7 +49,6 @@ class StaticSpectrumRequest(BaseModel):
     plasma_config: PlasmaConfig = Field(default_factory=PlasmaConfig)
     stark_model: StarkModel = "hydrogenic"
     continuum_model: ContinuumModel = "none"
-    planck_empirical_scale: float = Field(0.0, ge=0.0)
 
     @field_validator("proportions", mode="after")
     @classmethod
