@@ -430,8 +430,7 @@ Most spectrum requests use the following parameters:
 | `output_wavelengths_nm` | Optional custom output wavelength grid (2 to 10,000 ascending points, in nanometres). Overrides the uniform range/resolution grid. Use `load_wavelength_grid()` to read one from a file. |
 | `output_wavelength_grid_name` | Optional label for the custom grid, echoed back in `result.output_grid`. |
 | `stark_model` | Stark broadening method: `"hydrogenic"` (default) or `"mse"`. |
-| `continuum_model` | Plasma continuum: `"none"` (default, line emission only), `"merlin_physical"`, or `"planck_empirical"`. |
-| `planck_empirical_scale` | Scale factor for the `"planck_empirical"` continuum. Ignored by the other models. |
+| `continuum_model` | Plasma continuum: `"none"` (default, line emission only) or `"merlin_physical"`. |
 | `plasma_config` | Layered plasma structure — see `PlasmaConfig`: layer count, inter-layer Te/Ne ratios, core length fraction, and total plasma length. Drives self-absorption. |
 | `temporal_config` | Time evolution of Te, Ne, and plasma length for dynamic simulations — see `TemporalConfig`. |
 | `integration_time_s` | Total simulated exposure time for dynamic simulations, in seconds. |

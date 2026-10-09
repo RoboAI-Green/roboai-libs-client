@@ -436,10 +436,15 @@ def test_new_request_fields_reach_the_api():
 
     assert seen["stark_model"] == "mse"
     assert seen["continuum_model"] == "merlin_physical"
-    assert seen["planck_empirical_scale"] == 0.0
+    assert "planck_empirical_scale" not in seen
     # Already-wired nested configs must still travel.
     assert seen["plasma_config"]["number_of_layers"] == 2
     assert seen["temporal_config"]["gamma_dens"] == 2.0
+
+
+def test_planck_empirical_is_rejected_before_sending():
+    with pytest.raises(ValueError, match="continuum_model"):
+        ExposureRequest(elements=["Cu"], continuum_model="planck_empirical")
 
 
 def test_simulate_exposure_keeps_snapshots_by_default():
