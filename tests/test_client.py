@@ -442,6 +442,60 @@ def test_new_request_fields_reach_the_api():
     assert seen["temporal_config"]["gamma_dens"] == 2.0
 
 
+_MSE_PROVENANCE = {
+    "stark_model": "mse",
+    "stark_mse_lines": 12,
+    "stark_fallback_lines": 3,
+    "stark_mse_cache": "active",
+}
+
+
+def test_static_result_exposes_mse_stark_provenance():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(
+            200, json={"wls": [200.0, 200.05], "intensity": [1.0, 2.0], **_MSE_PROVENANCE}
+        )
+
+    client = make_client(handler)
+    result = client.simulate_static(elements=["Ni"], stark_model="mse")
+
+    assert seen["stark_model"] == "mse"
+    assert result.stark_model == "mse"
+    assert result.stark_mse_lines == 12
+    assert result.stark_fallback_lines == 3
+    assert result.stark_mse_cache == "active"
+
+
+def test_exposure_result_exposes_mse_stark_provenance():
+    payload = {**_exposure_payload(), **_MSE_PROVENANCE}
+    client = make_client(lambda request: httpx.Response(200, json=payload))
+
+    result = client.simulate_exposure(ExposureRequest(elements=["Cu"], stark_model="mse"))
+
+    assert result.stark_mse_lines == 12
+    assert result.stark_fallback_lines == 3
+    assert result.stark_mse_cache == "active"
+
+
+def test_stark_provenance_is_optional():
+    # Hydrogenic runs report only the method; sliced dynamic jobs omit the
+    # counts, and older servers send none of the fields.
+    hydrogenic = {**_exposure_payload(), "stark_model": "hydrogenic"}
+    client = make_client(lambda request: httpx.Response(200, json=hydrogenic))
+    result = client.simulate_exposure(ExposureRequest(elements=["Cu"]))
+    assert result.stark_model == "hydrogenic"
+    assert result.stark_mse_lines is None
+    assert result.stark_fallback_lines is None
+    assert result.stark_mse_cache is None
+
+    client = make_client(lambda request: httpx.Response(200, json=_exposure_payload()))
+    result = client.simulate_exposure(ExposureRequest(elements=["Cu"]))
+    assert result.stark_model is None
+
+
 def test_planck_empirical_is_rejected_before_sending():
     with pytest.raises(ValueError, match="continuum_model"):
         ExposureRequest(elements=["Cu"], continuum_model="planck_empirical")

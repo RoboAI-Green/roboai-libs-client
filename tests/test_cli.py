@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from roboai_libs_client.auth import load_stored_api_key
 from roboai_libs_client import cli
 from roboai_libs_client.errors import RoboAILIBSAPIError
@@ -218,7 +220,10 @@ def test_static_command_writes_csv(monkeypatch, tmp_path, capsys):
 
     assert exit_code == 0
     assert output_path.read_text() == "wavelength_nm,intensity\n200.0,1.0\n200.05,2.0\n"
-    assert "Saved 2 wavelength points" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "Saved 2 wavelength points" in captured.out
+    # Hydrogenic runs print no Stark summary.
+    assert captured.err == ""
     assert FakeClient.instances[0].static_kwargs == {
         "elements": ["Ni"],
         "proportions": None,
@@ -229,6 +234,7 @@ def test_static_command_writes_csv(monkeypatch, tmp_path, capsys):
         "ne_cm3": 1e17,
         "fwhm_nm": 0.0,
         "instrument_profile": "gaussian",
+        "stark_model": "hydrogenic",
     }
 
 
@@ -290,3 +296,81 @@ def test_dynamic_command_saves_hdf5(monkeypatch, tmp_path, capsys):
     assert instance.dynamic_request.time_resolution_s == 100e-9
     assert instance.dynamic_poll_interval_s == 0.1
     assert instance.dynamic_timeout_s == 10.0
+
+
+class MseFakeClient(FakeClient):
+    """Returns results carrying the line split an mse run reports."""
+
+    _split = {"stark_mse_lines": 12, "stark_fallback_lines": 3}
+
+    def simulate_static(self, request=None, **kwargs):
+        self.static_kwargs = kwargs
+        return SimpleNamespace(wls=[200.0, 200.05], intensity=[1.0, 2.0], **self._split)
+
+    def run_exposure_job(
+        self, request, *, include_snapshots=True, poll_interval_s=1.0, timeout_s=600.0
+    ):
+        self.dynamic_request = request
+        return SimpleNamespace(wls=[200.0, 200.05], total_exposure=[3.0, 4.0], **self._split)
+
+
+def test_static_command_mse_prints_line_split_to_stderr(monkeypatch, capsys):
+    FakeClient.instances = []
+    FakeClient.api_key = "tok_fake"
+    monkeypatch.setattr(cli, "RoboAILIBSClient", MseFakeClient)
+
+    exit_code = cli.main(["static", "--element", "Ni", "--stark-model", "mse"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert FakeClient.instances[0].static_kwargs["stark_model"] == "mse"
+    # The CSV on stdout stays clean; the split goes to stderr.
+    assert captured.out == "wavelength_nm,intensity\n200.0,1.0\n200.05,2.0\n"
+    assert captured.err == "Stark widths: MSE for 12 lines, hydrogenic fallback for 3\n"
+
+
+def test_dynamic_command_passes_stark_model(monkeypatch, tmp_path):
+    FakeClient.instances = []
+    FakeClient.api_key = "tok_fake"
+    monkeypatch.setattr(cli, "RoboAILIBSClient", FakeClient)
+
+    exit_code = cli.main(
+        ["dynamic", "--element", "Ni", "--stark-model", "mse", "--out", str(tmp_path / "ni.h5")]
+    )
+
+    assert exit_code == 0
+    assert FakeClient.instances[0].dynamic_request.stark_model == "mse"
+    assert FakeClient.instances[0].dynamic_request.api_payload()["stark_model"] == "mse"
+
+
+def test_dynamic_total_only_mse_prints_line_split_to_stderr(monkeypatch, tmp_path, capsys):
+    FakeClient.instances = []
+    FakeClient.api_key = "tok_fake"
+    monkeypatch.setattr(cli, "RoboAILIBSClient", MseFakeClient)
+    output_path = tmp_path / "ni_total.csv"
+
+    exit_code = cli.main(
+        [
+            "dynamic",
+            "--element",
+            "Ni",
+            "--stark-model",
+            "mse",
+            "--total-only",
+            "--out",
+            str(output_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert FakeClient.instances[0].dynamic_request.stark_model == "mse"
+    assert output_path.read_text() == "wavelength_nm,full_exposure\n200.0,3.0\n200.05,4.0\n"
+    assert "MSE for 12 lines, hydrogenic fallback for 3" in capsys.readouterr().err
+
+
+def test_stark_model_rejects_unknown_methods(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["static", "--element", "Ni", "--stark-model", "stark-b"])
+
+    assert excinfo.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err

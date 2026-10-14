@@ -99,6 +99,13 @@ class SpectrumResultBase(BaseModel):
     instrument_profile: str | None = None
     fwhm_nm: float | None = Field(None, validation_alias=AliasChoices("fwhm_nm", "instrument_fwhm_nm"))
     output_grid: OutputGrid | None = None
+    # Stark width provenance: the method that ran and, with "mse", how many
+    # lines used MSE widths vs fell back to the hydrogenic width, plus the
+    # worker's perturber cache status. Sliced dynamic jobs omit the counts.
+    stark_model: str | None = None
+    stark_mse_lines: int | None = None
+    stark_fallback_lines: int | None = None
+    stark_mse_cache: str | None = None
 
     @property
     def wavelengths_nm(self) -> list[float]:
