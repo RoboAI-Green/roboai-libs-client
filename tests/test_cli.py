@@ -235,6 +235,10 @@ def test_static_command_writes_csv(monkeypatch, tmp_path, capsys):
         "fwhm_nm": 0.0,
         "instrument_profile": "gaussian",
         "stark_model": "hydrogenic",
+        "continuum_model": "none",
+        "continuum_xi_fb": None,
+        "continuum_xi_ff": None,
+        "continuum_sigma_ea_m2": None,
     }
 
 
@@ -374,3 +378,77 @@ def test_stark_model_rejects_unknown_methods(capsys):
 
     assert excinfo.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
+
+def test_static_command_passes_merlin_continuum_inputs(monkeypatch):
+    FakeClient.instances = []
+    FakeClient.api_key = "tok_fake"
+    monkeypatch.setattr(cli, "RoboAILIBSClient", FakeClient)
+
+    exit_code = cli.main(
+        [
+            "static",
+            "--element",
+            "Ar",
+            "--continuum-model",
+            "merlin_physical",
+            "--xi-fb",
+            "2.0",
+            "--continuum-xi-ff",
+            "1.1",
+            "--sigma-ea",
+            "1e-19",
+        ]
+    )
+
+    kwargs = FakeClient.instances[0].static_kwargs
+    assert exit_code == 0
+    assert kwargs["continuum_model"] == "merlin_physical"
+    assert kwargs["continuum_xi_fb"] == 2.0
+    assert kwargs["continuum_xi_ff"] == 1.1
+    assert kwargs["continuum_sigma_ea_m2"] == 1e-19
+
+
+def test_dynamic_command_sends_only_the_merlin_inputs_given(monkeypatch, tmp_path):
+    FakeClient.instances = []
+    FakeClient.api_key = "tok_fake"
+    monkeypatch.setattr(cli, "RoboAILIBSClient", FakeClient)
+
+    exit_code = cli.main(
+        [
+            "dynamic",
+            "--element",
+            "Ar",
+            "--continuum-model",
+            "merlin_physical",
+            "--sigma-ea",
+            "0",
+            "--out",
+            str(tmp_path / "ar.h5"),
+        ]
+    )
+
+    payload = FakeClient.instances[0].dynamic_request.api_payload()
+    assert exit_code == 0
+    assert payload["continuum_model"] == "merlin_physical"
+    assert payload["continuum_sigma_ea_m2"] == 0.0
+    # Unset inputs stay out of the payload, so the API defaults apply.
+    assert "continuum_xi_fb" not in payload
+    assert "continuum_xi_ff" not in payload
+
+
+def test_merlin_inputs_without_merlin_continuum_are_rejected(monkeypatch, tmp_path, capsys):
+    FakeClient.instances = []
+    FakeClient.api_key = "tok_fake"
+    monkeypatch.setattr(cli, "RoboAILIBSClient", FakeClient)
+    output_path = tmp_path / "ni.h5"
+
+    exit_code = cli.main(
+        ["dynamic", "--element", "Ni", "--xi-fb", "2.0", "--out", str(output_path)]
+    )
+
+    assert exit_code == 1
+    assert capsys.readouterr().err == (
+        "Error: --xi-fb: only valid with --continuum-model merlin_physical.\n"
+    )
+    assert not output_path.exists()

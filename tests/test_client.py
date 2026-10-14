@@ -496,6 +496,53 @@ def test_stark_provenance_is_optional():
     assert result.stark_model is None
 
 
+def test_merlin_inputs_reach_the_api_only_when_set():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.clear()
+        seen.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"wls": [200.0], "intensity": [1.0]})
+
+    client = make_client(handler)
+    client.simulate_static(
+        elements=["Ar"],
+        continuum_model="merlin_physical",
+        continuum_xi_fb=2.0,
+        continuum_xi_ff=1.1,
+        continuum_sigma_ea_m2=1e-19,
+    )
+    assert seen["continuum_xi_fb"] == 2.0
+    assert seen["continuum_xi_ff"] == 1.1
+    assert seen["continuum_sigma_ea_m2"] == 1e-19
+
+    # Unset inputs are omitted, leaving the API defaults in charge.
+    client.simulate_static(elements=["Ar"], continuum_model="merlin_physical")
+    assert seen["continuum_model"] == "merlin_physical"
+    assert not any(
+        key in seen for key in ("continuum_xi_fb", "continuum_xi_ff", "continuum_sigma_ea_m2")
+    )
+
+
+def test_merlin_inputs_need_the_merlin_continuum():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("an invalid request must not be sent")
+
+    client = make_client(handler)
+    with pytest.raises(ValueError, match="continuum_sigma_ea_m2 can only be set"):
+        client.simulate_static(elements=["Ar"], continuum_sigma_ea_m2=1e-19)
+    with pytest.raises(ValueError, match="continuum_xi_fb, continuum_xi_ff can only be set"):
+        ExposureRequest(
+            elements=["Ar"], continuum_model="none", continuum_xi_fb=2.0, continuum_xi_ff=1.0
+        )
+
+
+@pytest.mark.parametrize("value", [-1.0, float("inf"), float("nan")])
+def test_merlin_inputs_must_be_finite_and_non_negative(value):
+    with pytest.raises(ValueError):
+        ExposureRequest(elements=["Ar"], continuum_model="merlin_physical", continuum_xi_ff=value)
+
+
 def test_planck_empirical_is_rejected_before_sending():
     with pytest.raises(ValueError, match="continuum_model"):
         ExposureRequest(elements=["Cu"], continuum_model="planck_empirical")
