@@ -278,7 +278,58 @@ roboai-libs static --element Ni --range 280 330 --stark-model mse --out ni_mse.c
 `--stark-model` works for `dynamic` as well. With `mse`, the CLI prints the line
 split to stderr, so CSV written to stdout stays clean.
 
-### 6. Custom output wavelength grid
+### 6. Continuum background
+
+By default spectra contain line emission only (`continuum_model="none"`). Set
+`continuum_model="merlin_physical"` to add the continuous radiation of free
+electrons (recombination and Bremsstrahlung), following the MERLIN model
+(A. Favre et al., _J. Quant. Spectrosc. Radiat. Transf._ **330** (2025) 109222,
+https://doi.org/10.1016/j.jqsrt.2024.109222).
+
+```python
+from roboai_libs_client import RoboAILIBSClient
+
+client = RoboAILIBSClient()
+
+result = client.simulate_static(
+    elements=["Ar"],
+    range_min_nm=400,
+    range_max_nm=800,
+    te_ev=1.0,
+    ne_cm3=1e17,
+    continuum_model="merlin_physical",
+)
+```
+
+The continuum has three physical inputs. Leave them unset to use MERLIN's
+argon-representative values, or override any of them:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `continuum_xi_fb` | `1.75` | Free-bound (Biberman) factor; element- and band-dependent, reported ~1.2–2.5. |
+| `continuum_xi_ff` | `1.0` | Free-free Gaunt-type factor. |
+| `continuum_sigma_ea_m2` | `3e-19` | Electron-neutral momentum-transfer cross section, in m². `0` switches the electron-neutral term off. |
+
+The client uses SI units throughout: `continuum_sigma_ea_m2` is in m², while the
+web simulator shows the same value in 10⁻²⁰ m² (`3e-19` m² appears there as 30).
+These inputs only apply to `continuum_model="merlin_physical"`; setting one with
+any other continuum model raises a validation error before the request is sent.
+For matrices other than argon, treat the continuum level as approximate. The
+`continuum_*` parameters work the same way for `simulate_exposure` and
+`ExposureRequest`.
+
+Command-line equivalent:
+
+```bash
+roboai-libs static --element Ar --range 400 800 --continuum-model merlin_physical --out ar_continuum.csv
+roboai-libs static --element Ar --range 400 800 --continuum-model merlin_physical --sigma-ea 1e-19 --out ar_continuum.csv
+```
+
+`--xi-fb`, `--xi-ff` and `--sigma-ea` (also spelled `--continuum-xi-fb`,
+`--continuum-xi-ff` and `--continuum-sigma-ea-m2`) set the three inputs, and all
+of these options work for `dynamic` as well.
+
+### 7. Custom output wavelength grid
 
 Instead of a uniform `range_min_nm`/`range_max_nm`/`resolution_nm` grid, you can
 sample the spectrum on your own wavelength grid — for example one exported from
@@ -311,7 +362,7 @@ requests. If your grid is already in memory, pass any list of wavelengths to
 that the API limit is 10,000 points, which is higher than the web simulator's
 interactive limit for time-resolved views.
 
-### 7. Dynamic exposure
+### 8. Dynamic exposure
 
 ```python
 from roboai_libs_client import RoboAILIBSClient
@@ -366,7 +417,7 @@ Command-line equivalent, writing the full exposure as CSV:
 roboai-libs dynamic --element Ni --total-only --out ni_full_exposure.csv
 ```
 
-### 8. Save dynamic HDF5
+### 9. Save dynamic HDF5
 
 ```python
 from roboai_libs_client import RoboAILIBSClient, ExposureRequest
@@ -395,7 +446,7 @@ roboai-libs dynamic --element Ni --out ni_dynamic.h5
 The current platform API serves HDF5 for completed dynamic exposure jobs. Static
 spectra are available through `simulate_static()` as typed JSON results.
 
-### 9. Job control and progress
+### 10. Job control and progress
 
 Dynamic exposure jobs can take minutes. `save_dynamic_hdf5` (and
 `export_dynamic_hdf5`) accept an `on_progress` callback that fires whenever the
@@ -475,7 +526,10 @@ Most spectrum requests use the following parameters:
 | `output_wavelengths_nm` | Optional custom output wavelength grid (2 to 10,000 ascending points, in nanometres). Overrides the uniform range/resolution grid. Use `load_wavelength_grid()` to read one from a file. |
 | `output_wavelength_grid_name` | Optional label for the custom grid, echoed back in `result.output_grid`. |
 | `stark_model` | Stark broadening method: `"hydrogenic"` (default) or `"mse"` (modified semi-empirical, with a per-line hydrogenic fallback). See [Stark widths](#5-stark-widths). |
-| `continuum_model` | Plasma continuum: `"none"` (default, line emission only) or `"merlin_physical"`. |
+| `continuum_model` | Plasma continuum: `"none"` (default, line emission only) or `"merlin_physical"`. See [Continuum background](#6-continuum-background). |
+| `continuum_xi_fb` | MERLIN free-bound (Biberman) factor. Only with `"merlin_physical"`; unset uses `1.75`. |
+| `continuum_xi_ff` | MERLIN free-free Gaunt-type factor. Only with `"merlin_physical"`; unset uses `1.0`. |
+| `continuum_sigma_ea_m2` | MERLIN electron-neutral momentum-transfer cross section, in m². Only with `"merlin_physical"`; unset uses `3e-19`. |
 | `plasma_config` | Layered plasma structure — see `PlasmaConfig`: layer count, inter-layer Te/Ne ratios, core length fraction, and total plasma length. Drives self-absorption. |
 | `temporal_config` | Time evolution of Te, Ne, and plasma length for dynamic simulations — see `TemporalConfig`. |
 | `integration_time_s` | Total simulated exposure time for dynamic simulations, in seconds. |

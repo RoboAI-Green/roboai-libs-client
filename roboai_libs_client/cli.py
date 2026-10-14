@@ -207,7 +207,21 @@ def _write_full_exposure_csv(result, output_path: Path | None) -> None:
         writer.writerows(zip(result.wls, result.total_exposure, strict=True))
 
 
+_MERLIN_FLAGS = {
+    "continuum_xi_fb": "--xi-fb",
+    "continuum_xi_ff": "--xi-ff",
+    "continuum_sigma_ea_m2": "--sigma-ea",
+}
+
+
 def _static_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
+    if args.continuum_model != "merlin_physical":
+        given = [flag for dest, flag in _MERLIN_FLAGS.items() if getattr(args, dest) is not None]
+        if given:
+            # Caught before the request model, whose error names Python fields.
+            raise ValueError(
+                f"{', '.join(given)}: only valid with --continuum-model merlin_physical."
+            )
     range_min_nm, range_max_nm = args.wavelength_range
     return {
         "elements": args.elements,
@@ -220,6 +234,10 @@ def _static_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "fwhm_nm": args.fwhm_nm,
         "instrument_profile": args.instrument_profile,
         "stark_model": args.stark_model,
+        "continuum_model": args.continuum_model,
+        "continuum_xi_fb": args.continuum_xi_fb,
+        "continuum_xi_ff": args.continuum_xi_ff,
+        "continuum_sigma_ea_m2": args.continuum_sigma_ea_m2,
     }
 
 
@@ -351,6 +369,43 @@ def _add_common_spectrum_arguments(parser: argparse.ArgumentParser) -> None:
             f"it cannot cover. Default: {_field_default('stark_model')}."
         ),
     )
+    parser.add_argument(
+        "--continuum-model",
+        choices=["none", "merlin_physical"],
+        default=_field_default("continuum_model"),
+        help=(
+            "Plasma continuum: none (line emission only) or merlin_physical (the "
+            f"MERLIN physical continuum). Default: {_field_default('continuum_model')}."
+        ),
+    )
+    merlin_note = "Requires --continuum-model merlin_physical."
+    parser.add_argument(
+        "--xi-fb",
+        "--continuum-xi-fb",
+        dest="continuum_xi_fb",
+        type=float,
+        metavar="XI_FB",
+        help=f"MERLIN free-bound (Biberman) factor. {merlin_note} Default: 1.75.",
+    )
+    parser.add_argument(
+        "--xi-ff",
+        "--continuum-xi-ff",
+        dest="continuum_xi_ff",
+        type=float,
+        metavar="XI_FF",
+        help=f"MERLIN free-free Gaunt-type factor. {merlin_note} Default: 1.0.",
+    )
+    parser.add_argument(
+        "--sigma-ea",
+        "--continuum-sigma-ea-m2",
+        dest="continuum_sigma_ea_m2",
+        type=float,
+        metavar="SIGMA_M2",
+        help=(
+            "MERLIN electron-neutral momentum-transfer cross section in m^2; 0 switches "
+            f"the term off. {merlin_note} Default: 3e-19."
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=60.0, help="HTTP timeout in seconds")
 
 
@@ -449,6 +504,7 @@ def build_parser() -> argparse.ArgumentParser:
               roboai-libs static --element Ni --range 200 230 --resolution 0.05 --te 1 --ne 1e17 --out ni.csv
               roboai-libs static --element Ni --element Fe --proportion 2 --proportion 1 --out ni_fe.csv
               roboai-libs static --element Ni --stark-model mse --out ni_mse.csv
+              roboai-libs static --element Ar --continuum-model merlin_physical --out ar_continuum.csv
             """
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -471,6 +527,7 @@ def build_parser() -> argparse.ArgumentParser:
               roboai-libs dynamic --element Ni --range 200 230 --resolution 0.05 --integration-time 1e-6 --time-resolution 100e-9 --out ni_dynamic.h5
               roboai-libs dynamic --element Ni --total-only --out ni_full_exposure.csv
               roboai-libs dynamic --element Ni --stark-model mse --total-only --out ni_mse_full_exposure.csv
+              roboai-libs dynamic --element Ar --continuum-model merlin_physical --sigma-ea 1e-19 --total-only --out ar_full_exposure.csv
             """
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

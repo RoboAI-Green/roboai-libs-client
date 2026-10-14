@@ -6,6 +6,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 StarkModel = Literal["hydrogenic", "mse"]
 ContinuumModel = Literal["none", "merlin_physical"]
+# Physical inputs of the MERLIN continuum; the API rejects them with any other model.
+_MERLIN_INPUTS = ("continuum_xi_fb", "continuum_xi_ff", "continuum_sigma_ea_m2")
 
 
 def equal_proportions(elements: list[str]) -> list[float]:
@@ -49,6 +51,11 @@ class StaticSpectrumRequest(BaseModel):
     plasma_config: PlasmaConfig = Field(default_factory=PlasmaConfig)
     stark_model: StarkModel = "hydrogenic"
     continuum_model: ContinuumModel = "none"
+    # MERLIN inputs, SI units. None leaves them out of the payload, so the API
+    # defaults apply (xi_fb 1.75, xi_ff 1.0, sigma_ea 3e-19 m^2).
+    continuum_xi_fb: float | None = Field(None, ge=0.0, allow_inf_nan=False)
+    continuum_xi_ff: float | None = Field(None, ge=0.0, allow_inf_nan=False)
+    continuum_sigma_ea_m2: float | None = Field(None, ge=0.0, allow_inf_nan=False)
 
     @field_validator("proportions", mode="after")
     @classmethod
@@ -62,6 +69,16 @@ class StaticSpectrumRequest(BaseModel):
         if total <= 0:
             raise ValueError("proportions must sum to a positive value.")
         return [float(x) / total for x in value]
+
+    @model_validator(mode="after")
+    def validate_merlin_inputs(self) -> "StaticSpectrumRequest":
+        if self.continuum_model != "merlin_physical":
+            given = [name for name in _MERLIN_INPUTS if getattr(self, name) is not None]
+            if given:
+                raise ValueError(
+                    f"{', '.join(given)} can only be set with continuum_model='merlin_physical'."
+                )
+        return self
 
     def api_payload(self) -> dict[str, Any]:
         payload = self.model_dump(exclude_none=True)
