@@ -219,12 +219,28 @@ def _static_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "ne_cm3": args.ne_cm3,
         "fwhm_nm": args.fwhm_nm,
         "instrument_profile": args.instrument_profile,
+        "stark_model": args.stark_model,
     }
+
+
+def _print_stark_summary(result, stark_model: str) -> None:
+    """Report the MSE/hydrogenic line split on stderr, keeping CSV stdout clean."""
+    if stark_model != "mse":
+        return
+    mse_lines = getattr(result, "stark_mse_lines", None)
+    fallback_lines = getattr(result, "stark_fallback_lines", None)
+    if mse_lines is None or fallback_lines is None:
+        return
+    print(
+        f"Stark widths: MSE for {mse_lines} lines, hydrogenic fallback for {fallback_lines}",
+        file=sys.stderr,
+    )
 
 
 @with_client(require_token=True)
 def _run_static(args: argparse.Namespace, client: RoboAILIBSClient) -> int:
     result = client.simulate_static(**_static_kwargs_from_args(args))
+    _print_stark_summary(result, args.stark_model)
     _write_static_csv(result, args.out)
     if args.out is not None:
         print(f"Saved {len(result.wls)} wavelength points to {args.out}")
@@ -247,6 +263,7 @@ def _run_dynamic(args: argparse.Namespace, client: RoboAILIBSClient) -> int:
             poll_interval_s=args.poll_interval,
             timeout_s=args.job_timeout,
         )
+        _print_stark_summary(result, args.stark_model)
         _write_full_exposure_csv(result, args.out)
         print(f"Saved {len(result.wls)} wavelength points to {args.out}")
         return 0
@@ -323,6 +340,16 @@ def _add_common_spectrum_arguments(parser: argparse.ArgumentParser) -> None:
         choices=["gaussian", "lorentzian"],
         default=_field_default("instrument_profile"),
         help=f"Instrument broadening profile. Default: {_field_default('instrument_profile')}.",
+    )
+    parser.add_argument(
+        "--stark-model",
+        choices=["hydrogenic", "mse"],
+        default=_field_default("stark_model"),
+        help=(
+            "Stark width method: the hydrogenic approximation, or MSE (modified "
+            "semi-empirical), which falls back to the hydrogenic width for lines "
+            f"it cannot cover. Default: {_field_default('stark_model')}."
+        ),
     )
     parser.add_argument("--timeout", type=float, default=60.0, help="HTTP timeout in seconds")
 
@@ -421,6 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
               roboai-libs static --element Ni --out ni.csv
               roboai-libs static --element Ni --range 200 230 --resolution 0.05 --te 1 --ne 1e17 --out ni.csv
               roboai-libs static --element Ni --element Fe --proportion 2 --proportion 1 --out ni_fe.csv
+              roboai-libs static --element Ni --stark-model mse --out ni_mse.csv
             """
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -442,6 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
               roboai-libs dynamic --element Ni --out ni_dynamic.h5
               roboai-libs dynamic --element Ni --range 200 230 --resolution 0.05 --integration-time 1e-6 --time-resolution 100e-9 --out ni_dynamic.h5
               roboai-libs dynamic --element Ni --total-only --out ni_full_exposure.csv
+              roboai-libs dynamic --element Ni --stark-model mse --total-only --out ni_mse_full_exposure.csv
             """
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

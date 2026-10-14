@@ -233,7 +233,52 @@ result = client.simulate_static(
 print(result.instrument_profile, result.fwhm_nm)
 ```
 
-### 5. Custom output wavelength grid
+### 5. Stark widths
+
+Line Stark widths come from one of two methods, chosen with `stark_model`:
+
+- `"hydrogenic"` (default): the hydrogenic approximation.
+- `"mse"`: the modified semi-empirical (MSE) method of Dimitrijević and
+  Konjević (1980). Lines it cannot cover fall back to the hydrogenic width, one
+  line at a time. For more information on the method, its implementation and
+  accuracy, see our paper (listed under [Citation](#citation)).
+
+```python
+from roboai_libs_client import RoboAILIBSClient
+
+client = RoboAILIBSClient()
+
+result = client.simulate_static(
+    elements=["Ni"],
+    range_min_nm=280,
+    range_max_nm=330,
+    te_ev=1.0,
+    ne_cm3=1e17,
+    stark_model="mse",
+)
+
+print(result.stark_model)           # "mse"
+print(result.stark_mse_lines)       # lines with MSE widths
+print(result.stark_fallback_lines)  # lines that fell back to the hydrogenic width
+```
+
+`stark_model` works the same way for `simulate_exposure` and `ExposureRequest`.
+With `"mse"`, results report the line split in `stark_mse_lines` and
+`stark_fallback_lines`, and `stark_mse_cache` gives the status of the server's
+precomputed MSE data, for diagnostics. Dynamic jobs that run in several slices
+do not report the counts, and HDF5 downloads do not carry them, so these fields
+can be `None`.
+
+Command-line equivalent:
+
+```bash
+roboai-libs static --element Ni --range 280 330 --stark-model mse --out ni_mse.csv
+```
+
+`--stark-model` works for `dynamic` as well. With `mse`, the CLI prints the line
+split to stderr, so CSV written to stdout stays clean.
+
+### 6. Custom output wavelength grid
 
 Instead of a uniform `range_min_nm`/`range_max_nm`/`resolution_nm` grid, you can
 sample the spectrum on your own wavelength grid — for example one exported from
@@ -266,7 +311,7 @@ requests. If your grid is already in memory, pass any list of wavelengths to
 that the API limit is 10,000 points, which is higher than the web simulator's
 interactive limit for time-resolved views.
 
-### 6. Dynamic exposure
+### 7. Dynamic exposure
 
 ```python
 from roboai_libs_client import RoboAILIBSClient
@@ -321,7 +366,7 @@ Command-line equivalent, writing the full exposure as CSV:
 roboai-libs dynamic --element Ni --total-only --out ni_full_exposure.csv
 ```
 
-### 7. Save dynamic HDF5
+### 8. Save dynamic HDF5
 
 ```python
 from roboai_libs_client import RoboAILIBSClient, ExposureRequest
@@ -350,7 +395,7 @@ roboai-libs dynamic --element Ni --out ni_dynamic.h5
 The current platform API serves HDF5 for completed dynamic exposure jobs. Static
 spectra are available through `simulate_static()` as typed JSON results.
 
-### 8. Job control and progress
+### 9. Job control and progress
 
 Dynamic exposure jobs can take minutes. `save_dynamic_hdf5` (and
 `export_dynamic_hdf5`) accept an `on_progress` callback that fires whenever the
@@ -429,7 +474,7 @@ Most spectrum requests use the following parameters:
 | `instrument_profile` | Instrument broadening profile, usually `"gaussian"` or `"lorentzian"`. |
 | `output_wavelengths_nm` | Optional custom output wavelength grid (2 to 10,000 ascending points, in nanometres). Overrides the uniform range/resolution grid. Use `load_wavelength_grid()` to read one from a file. |
 | `output_wavelength_grid_name` | Optional label for the custom grid, echoed back in `result.output_grid`. |
-| `stark_model` | Stark broadening method: `"hydrogenic"` (default) or `"mse"`. |
+| `stark_model` | Stark broadening method: `"hydrogenic"` (default) or `"mse"` (modified semi-empirical, with a per-line hydrogenic fallback). See [Stark widths](#5-stark-widths). |
 | `continuum_model` | Plasma continuum: `"none"` (default, line emission only) or `"merlin_physical"`. |
 | `plasma_config` | Layered plasma structure — see `PlasmaConfig`: layer count, inter-layer Te/Ne ratios, core length fraction, and total plasma length. Drives self-absorption. |
 | `temporal_config` | Time evolution of Te, Ne, and plasma length for dynamic simulations — see `TemporalConfig`. |
@@ -478,6 +523,24 @@ If you use this software in your research, please cite:
   year    = {2026},
   issn    = {2352-7110},
   doi     = {10.1016/j.softx.2026.103030}
+}
+```
+
+If you use MSE Stark widths (`stark_model="mse"`), please also cite:
+
+> Y. Wang, T. Aaltonen, S. Zhang.
+> Data-provenance-aware Stark Broadening Estimation for Automated LIBS Spectral
+> Simulation of Ionic Lines.
+> _Atomic Spectroscopy_ (2026). doi:10.46770/AS.2026.0075s
+> https://www.at-spectrosc.com/as/article/abstract/20260075s
+
+```bibtex
+@article{wang2026stark,
+  title   = {Data-provenance-aware {Stark} Broadening Estimation for Automated {LIBS} Spectral Simulation of Ionic Lines},
+  author  = {Wang, Yilin and Aaltonen, Toni and Zhang, Shuo},
+  journal = {Atomic Spectroscopy},
+  year    = {2026},
+  doi     = {10.46770/AS.2026.0075s}
 }
 ```
 
